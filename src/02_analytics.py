@@ -1,4 +1,5 @@
 import os
+import glob
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, broadcast, avg, round, to_date, from_unixtime
 
@@ -24,7 +25,6 @@ def main():
     # Rutas a los datos procesados en formato Parquet
     PROCESSED_DIR = "data/processed"
     
-    reviews_path = os.path.join(PROCESSED_DIR, "reviews.parquet")
     apps_path = os.path.join(PROCESSED_DIR, "applications.parquet")
     app_genres_path = os.path.join(PROCESSED_DIR, "application_genres.parquet")
     genres_path = os.path.join(PROCESSED_DIR, "genres.parquet")
@@ -33,7 +33,12 @@ def main():
     
     # 1. Lectura de las tablas (Capa Silver)
     print("--- Cargando datos en formato Parquet ---")
-    df_reviews = spark.read.parquet(reviews_path)
+    
+    # Expandir el patrón de reviews particionados
+    reviews_files = glob.glob(os.path.join(PROCESSED_DIR, "reviews_part*.parquet"))
+    reviews_files.sort()  # Ordenar para garantizar consistencia
+    
+    df_reviews = spark.read.parquet(*reviews_files)  # Desempacar la lista de archivos
     df_apps = spark.read.parquet(apps_path)
     
     # Para traer los géneros, necesitamos cruzar con las tablas puente y de catálogo de géneros
