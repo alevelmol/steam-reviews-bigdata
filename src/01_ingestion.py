@@ -1,5 +1,13 @@
 import os
+import glob
+import math
+import shutil
 from pyspark.sql import SparkSession, DataFrame
+
+# Límite de GitHub para archivos individuales
+MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024   # 100 MB
+# Tamaño objetivo por parte (margen de seguridad para no rozar el límite)
+TARGET_FILE_SIZE_BYTES = 90 * 1024 * 1024  # 90 MB
 
 # Workaround para Java 18+ (en tu caso Java 25)
 # Permite a Spark acceder al Security Manager antiguo para que no lance el error "getSubject is not supported"
@@ -34,6 +42,80 @@ def create_spark_session() -> SparkSession:
         
         .getOrCreate()
     )
+
+def _write_parquet(df: DataFrame, parquet_path: str, entity_name: str) -> None:
+    """
+    Escribe el DataFrame como archivos Parquet limpios (sin archivos de control de Spark).
+
+    Estrategia en dos fases:
+    Fase 1 — Escritura de prueba con coalesce(1):
+        Se escribe el dataset completo en un único archivo temporal para conocer su tamaño
+        real en Parquet. No es posible calcularlo antes porque la tasa de compresión de
+        Parquet (Snappy por defecto) varía según la naturaleza de los datos.
+
+    Fase 2 — Decisión según tamaño:
+        a) Si el archivo <= MAX_FILE_SIZE_BYTES: se mueve directamente a la ruta final.
+        b) Si supera el límite (caso típico en el CSV de reseñas): se calcula el número de
+           particiones necesarias como ceil(tamaño_real / TARGET_FILE_SIZE_BYTES), se
+           re-escribe con repartition(n) y cada parte se guarda como
+           {nombre}_part01.parquet, {nombre}_part02.parquet, etc.
+
+    Justificación de repartition vs coalesce para la fase de división:
+        coalesce(n) reduce particiones sin shuffle, pero produce archivos de tamaño muy
+        desigual porque las particiones originales no están balanceadas. repartition(n)
+        hace un shuffle completo que redistribuye las filas uniformemente, garantizando
+        partes de tamaño similar y controlable.
+
+    En ambas fases el directorio temporal se elimina al final, lo que borra
+    automáticamente los ficheros de control (_SUCCESS, .crc) generados por Spark.
+    """
+    base_path = parquet_path.replace(".parquet", "")
+    temp_dir = parquet_path + "_tmp"
+
+    # --- Fase 1: escritura de prueba para medir tamaño real ---
+    df.coalesce(1).write.mode("overwrite").parquet(temp_dir)
+
+    part_files = glob.glob(os.path.join(temp_dir, "part-*.parquet"))
+    if not part_files:
+        raise RuntimeError(f"No se generó ningún archivo Parquet en {temp_dir}")
+
+    file_size = os.path.getsize(part_files[0])
+    size_mb = file_size / (1024 ** 2)
+
+    # --- Fase 2a: archivo único (dentro del límite) ---
+    if file_size <= MAX_FILE_SIZE_BYTES:
+        if os.path.exists(parquet_path):
+            os.remove(parquet_path)
+        shutil.move(part_files[0], parquet_path)
+        shutil.rmtree(temp_dir)
+        print(f"  Tamaño: {size_mb:.1f} MB → guardado como archivo único.")
+        print(f"  Archivo: {parquet_path}\n")
+        return
+
+    # --- Fase 2b: particionado (supera el límite de GitHub) ---
+    num_partitions = math.ceil(file_size / TARGET_FILE_SIZE_BYTES)
+    print(f"  Tamaño: {size_mb:.1f} MB → supera 100 MB, dividiendo en {num_partitions} partes.")
+
+    shutil.rmtree(temp_dir)
+
+    temp_dir_multi = parquet_path + "_tmp_multi"
+    df.repartition(num_partitions).write.mode("overwrite").parquet(temp_dir_multi)
+
+    part_files = sorted(glob.glob(os.path.join(temp_dir_multi, "part-*.parquet")))
+
+    # Limpiar partes anteriores de ejecuciones previas
+    for old_file in glob.glob(f"{base_path}_part*.parquet"):
+        os.remove(old_file)
+
+    for i, pf in enumerate(part_files, start=1):
+        dest = f"{base_path}_part{i:02d}.parquet"
+        shutil.move(pf, dest)
+        part_mb = os.path.getsize(dest) / (1024 ** 2)
+        print(f"  → {os.path.basename(dest)} ({part_mb:.1f} MB)")
+
+    shutil.rmtree(temp_dir_multi)
+    print(f"  Datos de {entity_name} guardados en {num_partitions} partes bajo {os.path.dirname(parquet_path)}/\n")
+
 
 def ingest_csv_to_parquet(spark: SparkSession, csv_path: str, parquet_path: str, entity_name: str) -> DataFrame:
     """
@@ -72,19 +154,7 @@ def ingest_csv_to_parquet(spark: SparkSession, csv_path: str, parquet_path: str,
     row_count = df.count()
     print(f"Total de registros cargados en {entity_name}: {row_count}")
     
-    # Escritura del DataFrame:
-    # Transformamos a formato Parquet. Parquet es un formato de almacenamiento columnar.
-    # Ventajas frente a CSV:
-    # 1. Comprime los datos mucho mejor (ocupa menos espacio en disco y memoria).
-    # 2. Guarda el esquema internamente (no hay que volver a inferirlo).
-    # 3. Permite leer solo las columnas necesarias en el futuro sin cargar toda la fila.
-    # mode("overwrite") garantiza que el pipeline sea idempotente (puedes ejecutarlo varias veces sin duplicar datos).
-    (
-        df.write
-        .mode("overwrite") # hay que tener cuidado con la ruta porque si no se le pasa un archivo, borra la carpeta completa.
-        .parquet(parquet_path)
-    )
-    print(f"Datos de {entity_name} guardados exitosamente en {parquet_path}\n")
+    _write_parquet(df, parquet_path, entity_name)
     
     return df
 
