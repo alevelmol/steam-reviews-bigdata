@@ -7,9 +7,10 @@ Pipeline de Big Data en PySpark procesando +1M de reseñas de Steam con arquitec
 ## Arquitectura Medallion
 
 ```
-data/raw/          data/processed/         data/gold/            data/output/plots/
-(CSV Bronze)  →    (Parquet Silver)   →    (Parquets Gold)   →   (PNG / HTML)
+data/raw/          data/processed/         data/gold/            data/output/
+(CSV Bronze)  →    (Parquet Silver)   →    (Parquets Gold)   →   (PNG / HTML / Dashboard)
                    01_ingestion.py         03_build_gold.py       04_visualizations.py
+                                                                  05_dashboard.py
 ```
 
 | Capa | Formato | Descripción |
@@ -17,9 +18,9 @@ data/raw/          data/processed/         data/gold/            data/output/plo
 | **Bronze** | CSV | Datos crudos del dataset de Steam 2025 |
 | **Silver** | Parquet Snappy | Datos ingeridos, tipados y limpios |
 | **Gold** | Parquet Snappy | Agregados analíticos pre-calculados |
-| **Output** | PNG / HTML | Gráficas estáticas e interactivas |
+| **Output** | PNG / HTML | Gráficas estáticas, interactivas y Dashboard Web |
 
-**Principio de separación de responsabilidades:** `03_build_gold.py` (Spark) y `04_visualizations.py` (Pandas) son independientes. El procesamiento distribuido y el consumo analítico pueden evolucionar sin acoplamiento.
+**Principio de separación de responsabilidades:** `03_build_gold.py` (Spark), `04_visualizations.py` y `05_dashboard.py` (Pandas/Plotly) son independientes. El procesamiento distribuido y el consumo analítico pueden evolucionar sin acoplamiento.
 
 ---
 
@@ -30,6 +31,7 @@ data/raw/          data/processed/         data/gold/            data/output/plo
 | `src/01_ingestion.py` | Bronze → Silver: lee CSV, infiere esquema, escribe Parquet | PySpark |
 | `src/03_build_gold.py` | Silver → Gold: ejecuta toda la lógica Spark y escribe agregados | PySpark |
 | `src/04_visualizations.py` | Gold → Plots: lee Gold con Pandas y genera gráficas | Pandas, Matplotlib, Seaborn, Plotly, scikit-learn |
+| `src/05_dashboard.py` | Gold → Dashboard: lee Gold con Pandas y genera dashboard HTML interactivo | Pandas, Plotly |
 
 Los scripts en `src/deprecated/` conservan el código histórico exploratorio y no forman parte del pipeline activo.
 
@@ -46,6 +48,9 @@ python src/03_build_gold.py
 
 # 3. Gold → Plots (regenerar gráficas sin re-ejecutar Spark)
 python src/04_visualizations.py
+
+# 4. Gold → Dashboard (generar web interactiva)
+python src/05_dashboard.py
 ```
 
 ---
@@ -70,8 +75,15 @@ python src/04_visualizations.py
 
 ---
 
-## Visualizaciones generadas (`data/output/plots/`)
+## Visualizaciones y Dashboard (`data/output/`)
 
+### Dashboard Interactivo
+Archivo HTML autocontenido generado por `05_dashboard.py`.
+| Archivo | Descripción |
+|---------|-------------|
+| `dashboard.html` | Dashboard interactivo web con todas las métricas, filtros y gráficas Plotly consolidadas. |
+
+### Gráficas Individuales (`plots/`)
 | Archivo | Tipo | Fuente Gold |
 |---------|------|-------------|
 | `01_hater_paradox.png` | Scatter | `gm_hater_paradox` |
@@ -107,7 +119,7 @@ Paquetes principales:
 | `pandas` | Lectura de Gold y manipulación para visualización |
 | `matplotlib` | Gráficas estáticas |
 | `seaborn` | Gráficas estadísticas sobre Matplotlib |
-| `plotly` | Gráficas interactivas (HTML) |
+| `plotly` | Gráficas interactivas (HTML) y Dashboard |
 | `scikit-learn` | TF-IDF para análisis NLP del rate bombing |
 | `numpy` | Operaciones numéricas (CDF, log) |
 | `umap-learn` | (Opcional) Reducción de dimensionalidad para embeddings |
