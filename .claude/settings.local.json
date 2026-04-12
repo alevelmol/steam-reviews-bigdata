@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(png|html|parquet\\)$\")",
+      "Bash(du -sh /c/Users/aleja/Desktop/Universidad/CBD/steam-reviews-bigdata/data/*)",
+      "Bash(xargs wc:*)",
+      "Bash(python src/05_dashboard.py)",
+      "Bash(pip install:*)",
+      "Bash(python \".claude/worktrees/festive-goldwasser/src/05_dashboard.py\")",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
