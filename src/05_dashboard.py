@@ -802,7 +802,7 @@ body{{
 }}
 .chart-card:hover{{border-color:var(--border-hover)}}
 .chart-card.span-2{{grid-column:span 2}}
-.chart-container{{width:100%;min-height:350px}}
+.chart-container{{width:100%;height:380px}}
 
 /* ── Responsive ── */
 .hamburger{{
@@ -931,6 +931,83 @@ body{{
   padding:0.2rem 0.75rem 0.1rem;min-height:1.2em;
   font-family:'JetBrains Mono',monospace;
 }}
+
+/* ── Entrance animations ── */
+@keyframes slideUpFade{{
+  from{{opacity:0;transform:translateY(18px)}}
+  to{{opacity:1;transform:translateY(0)}}
+}}
+@keyframes fadeInScale{{
+  from{{opacity:0;transform:scale(0.96)}}
+  to{{opacity:1;transform:scale(1)}}
+}}
+@keyframes dotPulse{{
+  0%,100%{{box-shadow:0 0 6px var(--orange)}}
+  50%{{box-shadow:0 0 16px var(--orange),0 0 28px rgba(249,115,22,0.35)}}
+}}
+@keyframes navShimmer{{
+  0%{{background-position:-200% center}}
+  100%{{background-position: 200% center}}
+}}
+@keyframes kpiGlow{{
+  from{{text-shadow:0 0 0 rgba(249,115,22,0)}}
+  to{{text-shadow:0 0 30px rgba(249,115,22,0.4)}}
+}}
+@keyframes borderPulse{{
+  0%,100%{{border-color:var(--border)}}
+  50%{{border-color:rgba(249,115,22,0.3)}}
+}}
+
+/* Tab header y KPI grid */
+.tab.active .tab-header{{animation:slideUpFade .35s ease both}}
+.tab.active .kpi-grid{{animation:slideUpFade .4s ease .04s both}}
+
+/* KPI cards escalonadas */
+.tab.active .kpi-card{{animation:slideUpFade .45s cubic-bezier(.22,.68,0,1.2) both}}
+.tab.active .kpi-card:nth-child(1){{animation-delay:.06s}}
+.tab.active .kpi-card:nth-child(2){{animation-delay:.12s}}
+.tab.active .kpi-card:nth-child(3){{animation-delay:.18s}}
+.tab.active .kpi-card:nth-child(4){{animation-delay:.24s}}
+.tab.active .kpi-card:nth-child(5){{animation-delay:.30s}}
+.tab.active .kpi-card:nth-child(6){{animation-delay:.36s}}
+.tab.active .kpi-card:nth-child(7){{animation-delay:.42s}}
+.tab.active .kpi-value{{animation:slideUpFade .45s ease both,kpiGlow .9s ease .4s both}}
+
+/* Chart cards escalonadas */
+.tab.active .chart-card{{animation:fadeInScale .5s cubic-bezier(.22,.68,0,1.2) both}}
+.tab.active .chart-card:nth-child(1){{animation-delay:.10s}}
+.tab.active .chart-card:nth-child(2){{animation-delay:.19s}}
+.tab.active .chart-card:nth-child(3){{animation-delay:.28s}}
+.tab.active .chart-card:nth-child(4){{animation-delay:.37s}}
+.tab.active .chart-card:nth-child(5){{animation-delay:.46s}}
+
+/* Nav items sidebar */
+.sidebar nav .nav-item{{animation:slideUpFade .3s ease both}}
+.sidebar nav .nav-item:nth-child(1){{animation-delay:.05s}}
+.sidebar nav .nav-item:nth-child(2){{animation-delay:.10s}}
+.sidebar nav .nav-item:nth-child(3){{animation-delay:.15s}}
+.sidebar nav .nav-item:nth-child(4){{animation-delay:.20s}}
+.sidebar nav .nav-item:nth-child(5){{animation-delay:.25s}}
+.sidebar nav .nav-item:nth-child(6){{animation-delay:.30s}}
+.sidebar-header{{animation:slideUpFade .4s ease both}}
+.sidebar-footer{{animation:slideUpFade .35s ease .35s both}}
+
+/* Nav active — shimmer + dot pulsante */
+.nav-item{{position:relative;overflow:hidden}}
+.nav-item.active::after{{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,transparent 0%,rgba(249,115,22,0.07) 50%,transparent 100%);
+  background-size:200% 100%;
+  animation:navShimmer 3s linear infinite;
+}}
+.nav-item.active .nav-dot{{animation:dotPulse 2.5s ease infinite}}
+
+/* Hover border pulse on chart cards */
+.chart-card:hover{{animation:borderPulse 2s ease infinite}}
+
+/* Search input — micro interacción */
+.search-input{{transition:border-color .2s,box-shadow .2s,transform .15s}}
+.search-input:focus{{transform:scaleX(1.005);transform-origin:left}}
 </style>
 </head>
 <body>
@@ -1146,6 +1223,9 @@ function renderTab(tabId) {{
 }}
 
 // ── Buscadores para scatter plots ──
+// Cache de trazas originales (decodificadas por Plotly tras el primer render)
+const searchOriginals = {{}};
+
 function filterScatter(chartId, query, textField) {{
   const div = document.getElementById(chartId);
   const baseId = chartId.replace('chart-', '');
@@ -1153,23 +1233,44 @@ function filterScatter(chartId, query, textField) {{
 
   if (!div || !div.data) return;
 
-  const trace = div.data[0];
-  const names = (textField === 'text' ? trace.text : []) || [];
+  // Guardar copia de la traza original la primera vez que se llama
+  if (!searchOriginals[baseId]) {{
+    searchOriginals[baseId] = JSON.parse(JSON.stringify(div.data[0]));
+  }}
+
+  const originalTrace = searchOriginals[baseId];
+  const names = originalTrace.text || [];
 
   query = (query || '').toLowerCase().trim();
 
   if (!query) {{
-    Plotly.restyle(div, {{'marker.opacity': null}}, [0]);
+    // Restaurar datos originales completos
+    Plotly.react(div, [originalTrace], div.layout, PLOTLY_CONFIG);
     if (matchEl) matchEl.textContent = '';
     return;
   }}
 
-  const opacities = names.map(n =>
-    typeof n === 'string' && n.toLowerCase().includes(query) ? 0.95 : 0.04
-  );
-  const count = opacities.filter(o => o > 0.5).length;
-  Plotly.restyle(div, {{'marker.opacity': [opacities]}}, [0]);
-  if (matchEl) matchEl.textContent = count > 0 ? count + ' resultado(s) encontrado(s)' : 'Sin coincidencias';
+  // Índices que coinciden con la búsqueda
+  const matching = [];
+  names.forEach((n, i) => {{
+    if (typeof n === 'string' && n.toLowerCase().includes(query)) matching.push(i);
+  }});
+
+  // Construir traza filtrada: sólo se retienen los índices coincidentes
+  const filtered = {{}};
+  for (const key of Object.keys(originalTrace)) {{
+    const val = originalTrace[key];
+    if (Array.isArray(val) && val.length === names.length) {{
+      filtered[key] = matching.map(i => val[i]);
+    }} else {{
+      filtered[key] = val;
+    }}
+  }}
+
+  Plotly.react(div, [filtered], div.layout, PLOTLY_CONFIG);
+  if (matchEl) matchEl.textContent = matching.length > 0
+    ? matching.length + ' resultado(s) encontrado(s)'
+    : 'Sin coincidencias';
 }}
 
 function clearSearch(baseId) {{
