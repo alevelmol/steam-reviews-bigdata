@@ -25,24 +25,24 @@ from plotly.subplots import make_subplots
 GOLD_DIR = "data/gold"
 OUTPUT_PATH = "data/output/dashboard.html"
 
-# ── Paleta de colores ──────────────────────────────────
-ORANGE = "#f97316"
-ORANGE_LIGHT = "#fb923c"
-ORANGE_DIM = "#c2410c"
-BG_DARK = "#0a0a0a"
-BG_CARD = "#141414"
-BG_CHART = "#141414"
-TEXT_PRIMARY = "#e5e5e5"
-TEXT_SECONDARY = "#a3a3a3"
-GRID_COLOR = "#252525"
-GREEN = "#34d399"
-RED = "#ef4444"
-BLUE = "#38bdf8"
+# ── Paleta de colores (Steam_BigData_Presentacion.pptx) ────────────────────
+ORANGE = "#00B5D8"        # Acento primario: cian Steam
+ORANGE_LIGHT = "#5DD5EE"  # Cian claro
+ORANGE_DIM = "#007A9A"    # Cian oscuro
+BG_DARK = "#0B1522"       # Fondo principal
+BG_CARD = "#0F1B30"       # Fondo de tarjetas
+BG_CHART = "#0F1B30"      # Fondo de gráficas
+TEXT_PRIMARY = "#D9D2C2"  # Texto principal (crema)
+TEXT_SECONDARY = "#8C9BB5" # Texto secundario (azul grisáceo)
+GRID_COLOR = "#1C2D45"    # Grid de gráficas
+GREEN = "#2ECC71"
+RED = "#E94B4B"
+BLUE = "#5DD5EE"
 PURPLE = "#a78bfa"
-YELLOW = "#fbbf24"
+YELLOW = "#F5A623"        # Ámbar presentación
 PINK = "#fb7185"
 
-COLORWAY = [ORANGE, BLUE, GREEN, PURPLE, PINK, YELLOW, RED, ORANGE_LIGHT]
+COLORWAY = [ORANGE, YELLOW, GREEN, BLUE, PINK, PURPLE, RED, ORANGE_LIGHT]
 
 
 def _gold(name: str) -> str:
@@ -55,6 +55,7 @@ def _theme(fig: go.Figure, height: int = 460) -> go.Figure:
         paper_bgcolor=BG_CHART,
         plot_bgcolor=BG_CHART,
         font=dict(family="Inter, sans-serif", color=TEXT_PRIMARY, size=12),
+        title=dict(x=0, xanchor="left", pad=dict(l=10)),
         title_font=dict(color=ORANGE, size=15, family="Inter, sans-serif"),
         xaxis=dict(
             gridcolor=GRID_COLOR, zerolinecolor="#333",
@@ -66,8 +67,8 @@ def _theme(fig: go.Figure, height: int = 460) -> go.Figure:
         ),
         margin=dict(l=10, r=10, t=60, b=10),
         hoverlabel=dict(
-            bgcolor="#1e1e1e", font=dict(color="#fff", family="Inter"),
-            bordercolor="#333",
+            bgcolor="#0D1E36", font=dict(color=TEXT_PRIMARY, family="Inter"),
+            bordercolor="#1C2D45",
         ),
         height=height,
         autosize=True,
@@ -153,7 +154,7 @@ def fig_early_access(data: dict) -> go.Figure:
 def fig_top_genres(data: dict) -> go.Figure:
     pdf = data["gm_top_genres"].head(20).sort_values("review_count", ascending=True)
     n = len(pdf)
-    colors = [f"rgba(249,115,22,{0.4 + 0.6 * i / n:.2f})" for i in range(n)]
+    colors = [f"rgba(0,181,216,{0.4 + 0.6 * i / n:.2f})" for i in range(n)]
 
     fig = go.Figure(go.Bar(
         x=pdf["review_count"], y=pdf["genre_name"],
@@ -190,7 +191,8 @@ def fig_hater_paradox(data: dict) -> go.Figure:
         line=dict(color=TEXT_SECONDARY, dash="dash", width=1),
     )
     fig.add_annotation(
-        x=400, y=420, text="Los haters juegan más →",
+        xref="paper", yref="paper",
+        x=0.88, y=0.92, text="Los haters juegan más →",
         showarrow=False, font=dict(color=TEXT_SECONDARY, size=11),
     )
     fig.update_layout(
@@ -377,6 +379,10 @@ def fig_rate_bombing(data: dict) -> go.Figure:
     pdf = pdf.sort_values("review_date").reset_index(drop=True)
     pdf["neg_ratio"] = (pdf["negative"] / pdf["total"]) * 100
 
+    # Convertir a string ISO para evitar notación científica en el eje X
+    dates = pdf["review_date"].dt.strftime("%Y-%m-%d").tolist()
+    dates_band = dates + dates[::-1]
+
     window = 30
     pdf["rolling_mean"] = pdf["neg_ratio"].rolling(window, center=True, min_periods=10).mean()
     pdf["rolling_std"] = pdf["neg_ratio"].rolling(window, center=True, min_periods=10).std()
@@ -384,31 +390,33 @@ def fig_rate_bombing(data: dict) -> go.Figure:
     pdf["lower_band"] = pdf["rolling_mean"] - 2 * pdf["rolling_std"]
     pdf["anomaly"] = pdf["neg_ratio"] > pdf["upper_band"]
 
+    anom = pdf[pdf["anomaly"]]
+    anom_dates = pdf.loc[pdf["anomaly"], "review_date"].dt.strftime("%Y-%m-%d").tolist()
+
     fig = go.Figure()
     # Serie diaria
     fig.add_trace(go.Scatter(
-        x=pdf["review_date"], y=pdf["neg_ratio"],
+        x=dates, y=pdf["neg_ratio"].tolist(),
         mode="lines", name="% Negativas diario",
         line=dict(color=TEXT_SECONDARY, width=0.8), opacity=0.5,
         hovertemplate="<b>%{x|%d %b %Y}</b><br>% Negativas: %{y:.2f}%<extra></extra>",
     ))
     # Media móvil
     fig.add_trace(go.Scatter(
-        x=pdf["review_date"], y=pdf["rolling_mean"],
+        x=dates, y=pdf["rolling_mean"].tolist(),
         mode="lines", name=f"Media móvil ({window}d)",
         line=dict(color=BLUE, width=2), hoverinfo="skip",
     ))
     # Banda de confianza
     fig.add_trace(go.Scatter(
-        x=pd.concat([pdf["review_date"], pdf["review_date"][::-1]]),
-        y=pd.concat([pdf["upper_band"], pdf["lower_band"][::-1]]),
+        x=dates_band,
+        y=pd.concat([pdf["upper_band"], pdf["lower_band"][::-1]]).tolist(),
         fill="toself", fillcolor="rgba(56,189,248,0.08)",
         line=dict(color="rgba(0,0,0,0)"), name="±2σ", hoverinfo="skip",
     ))
     # Anomalías
-    anom = pdf[pdf["anomaly"]]
     fig.add_trace(go.Scatter(
-        x=anom["review_date"], y=anom["neg_ratio"],
+        x=anom_dates, y=anom["neg_ratio"].tolist(),
         mode="markers", name=f"Anomalías ({len(anom)} días)",
         marker=dict(color=RED, size=8, symbol="circle",
                     line=dict(width=1, color="#fff")),
@@ -420,6 +428,7 @@ def fig_rate_bombing(data: dict) -> go.Figure:
     fig.update_layout(
         title="Detección de Rate Bombing: Anomalías de Negatividad",
         xaxis_title="Fecha", yaxis_title="% Reseñas Negativas",
+        xaxis_type="date",
         hovermode="closest",
         legend=dict(orientation="h", yanchor="top", y=-0.12, xanchor="left", x=0),
         margin=dict(l=10, r=10, t=60, b=80),
@@ -484,6 +493,8 @@ def fig_top_users(data: dict) -> go.Figure:
 
 def fig_user_profiles(data: dict) -> go.Figure:
     pdf = data["gm_user_profiles"].copy()
+    # games_owned viene de un avg() en Spark → redondear a entero
+    pdf["games_owned"] = pdf["games_owned"].round().astype(int)
     pdf["positivity_pct"] = (pdf["positivity_rate"] * 100).round(1)
     pdf["avg_playtime_hours"] = pdf["avg_playtime_hours"].round(1)
 
@@ -499,16 +510,26 @@ def fig_user_profiles(data: dict) -> go.Figure:
         ),
         customdata=np.stack([pdf["positivity_pct"], pdf["avg_playtime_hours"]], axis=-1),
         hovertemplate=(
-            "Juegos: %{x:,}<br>"
-            "Reseñas: %{y:,}<br>"
+            "Juegos: %{x:,d}<br>"
+            "Reseñas: %{y:,d}<br>"
             "Positividad: %{customdata[0]:.1f}%<br>"
             "Media horas: %{customdata[1]:.1f}h<extra></extra>"
         ),
     ))
     fig.update_layout(
         title="Perfil del Revisor: Biblioteca vs Actividad",
-        xaxis_title="Juegos en Biblioteca (log)", xaxis_type="log",
-        yaxis_title="Reseñas Escritas (log)", yaxis_type="log",
+        xaxis=dict(
+            title="Juegos en Biblioteca (escala log)",
+            type="log",
+            tickvals=[1, 10, 100, 1_000, 10_000],
+            ticktext=["1", "10", "100", "1.000", "10.000"],
+        ),
+        yaxis=dict(
+            title="Reseñas Escritas (escala log)",
+            type="log",
+            tickvals=[1, 10, 100, 1_000],
+            ticktext=["1", "10", "100", "1.000"],
+        ),
     )
     return _theme(fig, height=500)
 
@@ -579,6 +600,8 @@ def fig_dev_ranking(data: dict) -> go.Figure:
     fig.update_layout(
         title=dict(text="Ranking de Desarrolladoras (Top 20 por volumen)", y=0.99),
         margin=dict(l=10, r=10, t=80, b=10),
+        xaxis2=dict(gridcolor=GRID_COLOR, zerolinecolor="#333", title_font=dict(color=TEXT_SECONDARY)),
+        yaxis2=dict(gridcolor=GRID_COLOR, zerolinecolor="#333", title_font=dict(color=TEXT_SECONDARY)),
     )
     fig.update_xaxes(range=[0, 1.1], row=1, col=1)
     fig.add_vline(x=0.7, line=dict(color=TEXT_SECONDARY, dash="dash", width=0.8), row=1, col=1)
@@ -704,9 +727,9 @@ def generate_html(charts: dict[str, dict], kpis: list[dict]) -> str:
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 :root{{
-  --bg:#0a0a0a;--bg-card:#141414;--bg-card-hover:#1a1a1a;
-  --orange:#f97316;--orange-dim:#c2410c;--orange-glow:rgba(249,115,22,0.15);
-  --text:#e5e5e5;--text-sec:#a3a3a3;--border:#1f1f1f;--border-hover:#333;
+  --bg:#0B1522;--bg-card:#0F1B30;--bg-card-hover:#152040;
+  --orange:#00B5D8;--orange-dim:#007A9A;--orange-glow:rgba(0,181,216,0.15);
+  --text:#D9D2C2;--text-sec:#8C9BB5;--border:#1C2D45;--border-hover:#2A3F60;
 }}
 html{{font-size:15px}}
 body{{
@@ -717,7 +740,7 @@ body{{
 /* ── Sidebar ── */
 .sidebar{{
   width:250px;min-width:250px;height:100vh;position:fixed;top:0;left:0;
-  background:linear-gradient(180deg,#0c0c0c 0%,#111 100%);
+  background:linear-gradient(180deg,#0D1829 0%,#0F1B30 100%);
   border-right:1px solid var(--border);z-index:100;
   display:flex;flex-direction:column;
   transition:transform .3s ease;
@@ -802,7 +825,7 @@ body{{
 }}
 .chart-card:hover{{border-color:var(--border-hover)}}
 .chart-card.span-2{{grid-column:span 2}}
-.chart-container{{width:100%;height:380px}}
+.chart-container{{width:100%;min-height:300px}}
 
 /* ── Responsive ── */
 .hamburger{{
@@ -826,72 +849,72 @@ body{{
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{{width:6px}}
 ::-webkit-scrollbar-track{{background:var(--bg)}}
-::-webkit-scrollbar-thumb{{background:#333;border-radius:3px}}
-::-webkit-scrollbar-thumb:hover{{background:#555}}
+::-webkit-scrollbar-thumb{{background:#1C2D45;border-radius:3px}}
+::-webkit-scrollbar-thumb:hover{{background:#2A3F60}}
 
 /* ── Visual polish ── */
 .content{{
-  background-image:radial-gradient(rgba(249,115,22,0.022) 1px,transparent 1px);
+  background-image:radial-gradient(rgba(0,181,216,0.025) 1px,transparent 1px);
   background-size:28px 28px;
 }}
 .sidebar-header{{
-  background:linear-gradient(135deg,rgba(249,115,22,0.08) 0%,transparent 70%);
-  border-bottom:1px solid rgba(249,115,22,0.18) !important;
+  background:linear-gradient(135deg,rgba(0,181,216,0.1) 0%,transparent 70%);
+  border-bottom:1px solid rgba(0,181,216,0.2) !important;
   position:relative;
 }}
 .sidebar-header::after{{
   content:'';position:absolute;bottom:-1px;left:1.5rem;right:1.5rem;
   height:1px;background:linear-gradient(90deg,var(--orange),transparent);
-  opacity:0.3;
+  opacity:0.35;
 }}
 .sidebar-badge{{
   display:inline-block;font-size:0.6rem;font-weight:600;letter-spacing:0.12em;
-  color:var(--orange);background:rgba(249,115,22,0.12);
-  border:1px solid rgba(249,115,22,0.25);border-radius:4px;
+  color:var(--orange);background:rgba(0,181,216,0.12);
+  border:1px solid rgba(0,181,216,0.28);border-radius:4px;
   padding:0.15rem 0.5rem;margin-bottom:0.5rem;text-transform:uppercase;
 }}
 .nav-item.active{{
   color:var(--orange);background:var(--orange-glow);
   border-left-color:var(--orange);
-  box-shadow:inset 0 0 30px rgba(249,115,22,0.05);
+  box-shadow:inset 0 0 30px rgba(0,181,216,0.06);
 }}
 .sidebar-footer{{
-  padding:1rem 1.5rem;border-top:1px solid rgba(249,115,22,0.1);
-  font-size:0.68rem;color:#444;text-align:center;letter-spacing:0.04em;
+  padding:1rem 1.5rem;border-top:1px solid rgba(0,181,216,0.12);
+  font-size:0.68rem;color:#3a5070;text-align:center;letter-spacing:0.04em;
 }}
 .kpi-card{{
-  background:linear-gradient(145deg,#1d1d1d 0%,#141414 100%) !important;
+  background:linear-gradient(145deg,#122038 0%,#0F1B30 100%) !important;
   position:relative;overflow:hidden;
 }}
 .kpi-card::before{{
   content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,var(--orange) 0%,rgba(249,115,22,0.3) 60%,transparent 100%);
+  background:linear-gradient(90deg,var(--orange) 0%,rgba(0,181,216,0.3) 60%,transparent 100%);
 }}
 .kpi-card:hover{{
-  border-color:rgba(249,115,22,0.4) !important;
-  box-shadow:0 6px 24px rgba(249,115,22,0.07);
+  border-color:rgba(0,181,216,0.4) !important;
+  box-shadow:0 6px 24px rgba(0,181,216,0.08);
   transform:translateY(-3px) !important;
 }}
-.kpi-value{{text-shadow:0 0 30px rgba(249,115,22,0.3)}}
+.kpi-value{{text-shadow:0 0 30px rgba(0,181,216,0.35)}}
 .chart-card{{
   position:relative;
 }}
 .chart-card::before{{
   content:'';position:absolute;top:0;left:0;right:0;height:2px;z-index:1;
-  background:linear-gradient(90deg,rgba(249,115,22,0.45) 0%,rgba(249,115,22,0.1) 50%,transparent 100%);
+  background:linear-gradient(90deg,rgba(0,181,216,0.5) 0%,rgba(0,181,216,0.12) 50%,transparent 100%);
   border-radius:12px 12px 0 0;
 }}
 .chart-card:hover{{
-  border-color:rgba(249,115,22,0.2) !important;
-  box-shadow:0 8px 32px rgba(0,0,0,0.35);
+  border-color:rgba(0,181,216,0.22) !important;
+  box-shadow:0 8px 32px rgba(0,0,0,0.4);
 }}
 .tab-header h2{{
-  background:linear-gradient(90deg,#ffffff 30%,#aaaaaa 100%);
+  background:linear-gradient(90deg,#D9D2C2 30%,#8C9BB5 100%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   background-clip:text;
 }}
 .tab-header::after{{
-  background:linear-gradient(90deg,var(--orange),rgba(249,115,22,0.2),transparent);
+  background:linear-gradient(90deg,var(--orange),rgba(0,181,216,0.2),transparent);
   width:80px;height:3px;
 }}
 
@@ -902,22 +925,22 @@ body{{
   border-bottom:1px solid var(--border);
 }}
 .search-input{{
-  flex:1;background:#0d0d0d;
-  border:1px solid #2a2a2a;border-radius:8px;
+  flex:1;background:#0A1626;
+  border:1px solid #1C2D45;border-radius:8px;
   color:var(--text);padding:0.45rem 0.85rem 0.45rem 2rem;
   font-family:'Inter',sans-serif;font-size:0.82rem;
   outline:none;transition:border-color .2s,box-shadow .2s;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238C9BB5' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:0.6rem center;
 }}
 .search-input:focus{{
   border-color:var(--orange);
-  box-shadow:0 0 0 3px rgba(249,115,22,0.12);
+  box-shadow:0 0 0 3px rgba(0,181,216,0.14);
 }}
-.search-input::placeholder{{color:#3a3a3a}}
+.search-input::placeholder{{color:#2A3F60}}
 .search-clear{{
-  background:none;border:1px solid #2a2a2a;
-  color:#555;border-radius:6px;
+  background:none;border:1px solid #1C2D45;
+  color:#5C6B85;border-radius:6px;
   padding:0.38rem 0.65rem;cursor:pointer;font-size:0.75rem;
   transition:all .2s ease;flex-shrink:0;line-height:1;
 }}
@@ -943,19 +966,19 @@ body{{
 }}
 @keyframes dotPulse{{
   0%,100%{{box-shadow:0 0 6px var(--orange)}}
-  50%{{box-shadow:0 0 16px var(--orange),0 0 28px rgba(249,115,22,0.35)}}
+  50%{{box-shadow:0 0 16px var(--orange),0 0 28px rgba(0,181,216,0.4)}}
 }}
 @keyframes navShimmer{{
   0%{{background-position:-200% center}}
   100%{{background-position: 200% center}}
 }}
 @keyframes kpiGlow{{
-  from{{text-shadow:0 0 0 rgba(249,115,22,0)}}
-  to{{text-shadow:0 0 30px rgba(249,115,22,0.4)}}
+  from{{text-shadow:0 0 0 rgba(0,181,216,0)}}
+  to{{text-shadow:0 0 30px rgba(0,181,216,0.45)}}
 }}
 @keyframes borderPulse{{
   0%,100%{{border-color:var(--border)}}
-  50%{{border-color:rgba(249,115,22,0.3)}}
+  50%{{border-color:rgba(0,181,216,0.3)}}
 }}
 
 /* Tab header y KPI grid */
@@ -996,7 +1019,7 @@ body{{
 .nav-item{{position:relative;overflow:hidden}}
 .nav-item.active::after{{
   content:'';position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(90deg,transparent 0%,rgba(249,115,22,0.07) 50%,transparent 100%);
+  background:linear-gradient(90deg,transparent 0%,rgba(0,181,216,0.08) 50%,transparent 100%);
   background-size:200% 100%;
   animation:navShimmer 3s linear infinite;
 }}
@@ -1217,14 +1240,65 @@ function renderTab(tabId) {{
     const chartData = CHARTS[id];
     const div = document.getElementById('chart-' + id);
     if (chartData && div) {{
+      const h = chartData.layout && chartData.layout.height;
+      if (h) div.style.height = h + 'px';
       Plotly.newPlot(div, chartData.data, chartData.layout, PLOTLY_CONFIG);
     }}
   }});
 }}
 
 // ── Buscadores para scatter plots ──
-// Cache de trazas originales (decodificadas por Plotly tras el primer render)
-const searchOriginals = {{}};
+
+// Plotly serializa arrays numéricos en formato binario {{dtype, bdata}} (base64).
+// Esta función los decodifica a arrays JS normales para poder filtrarlos.
+function _decodeBdata(obj) {{
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(_decodeBdata);
+  if (typeof obj === 'object') {{
+    if ('bdata' in obj && 'dtype' in obj) {{
+      const bin = atob(obj.bdata);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      const dtypeMap = {{
+        f4: Float32Array, f8: Float64Array,
+        i1: Int8Array,   i2: Int16Array,   i4: Int32Array,
+        u1: Uint8Array,  u2: Uint16Array,  u4: Uint32Array,
+      }};
+      const TypedArray = dtypeMap[obj.dtype] || Float64Array;
+      return Array.from(new TypedArray(buf.buffer));
+    }}
+    const out = {{}};
+    for (const k of Object.keys(obj)) out[k] = _decodeBdata(obj[k]);
+    return out;
+  }}
+  return obj;
+}}
+
+// Filtra recursivamente todos los arrays de longitud totalLen,
+// reteniendo sólo los índices en matching.
+function _filterArrays(obj, matching, totalLen) {{
+  if (Array.isArray(obj)) {{
+    return obj.length === totalLen ? matching.map(i => obj[i]) : obj.slice();
+  }}
+  if (obj !== null && typeof obj === 'object') {{
+    const out = {{}};
+    for (const k of Object.keys(obj)) {{
+      out[k] = _filterArrays(obj[k], matching, totalLen);
+    }}
+    return out;
+  }}
+  return obj;
+}}
+
+// Cache de trazas decodificadas (bdata → arrays JS normales)
+const _decodedTraces = {{}};
+
+function _getDecodedTrace(baseId) {{
+  if (!_decodedTraces[baseId]) {{
+    _decodedTraces[baseId] = _decodeBdata(CHARTS[baseId].data[0]);
+  }}
+  return _decodedTraces[baseId];
+}}
 
 function filterScatter(chartId, query, textField) {{
   const div = document.getElementById(chartId);
@@ -1233,39 +1307,23 @@ function filterScatter(chartId, query, textField) {{
 
   if (!div || !div.data) return;
 
-  // Guardar copia de la traza original la primera vez que se llama
-  if (!searchOriginals[baseId]) {{
-    searchOriginals[baseId] = JSON.parse(JSON.stringify(div.data[0]));
-  }}
-
-  const originalTrace = searchOriginals[baseId];
-  const names = originalTrace.text || [];
+  const origTrace = _getDecodedTrace(baseId);
+  const names = origTrace.text || [];
 
   query = (query || '').toLowerCase().trim();
 
   if (!query) {{
-    // Restaurar datos originales completos
-    Plotly.react(div, [originalTrace], div.layout, PLOTLY_CONFIG);
+    Plotly.react(div, [origTrace], div.layout, PLOTLY_CONFIG);
     if (matchEl) matchEl.textContent = '';
     return;
   }}
 
-  // Índices que coinciden con la búsqueda
   const matching = [];
   names.forEach((n, i) => {{
     if (typeof n === 'string' && n.toLowerCase().includes(query)) matching.push(i);
   }});
 
-  // Construir traza filtrada: sólo se retienen los índices coincidentes
-  const filtered = {{}};
-  for (const key of Object.keys(originalTrace)) {{
-    const val = originalTrace[key];
-    if (Array.isArray(val) && val.length === names.length) {{
-      filtered[key] = matching.map(i => val[i]);
-    }} else {{
-      filtered[key] = val;
-    }}
-  }}
+  const filtered = _filterArrays(origTrace, matching, names.length);
 
   Plotly.react(div, [filtered], div.layout, PLOTLY_CONFIG);
   if (matchEl) matchEl.textContent = matching.length > 0
